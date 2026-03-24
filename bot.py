@@ -1,17 +1,17 @@
 """
 Telegram Gemini Voice Bot
 =========================
-A webhook-based Telegram bot using Gemini 3.1 Flash Lite for text/voice
+A webhook-based Telegram bot using the Gemini Interactions API for text/voice
 reasoning and Gemini TTS for voice responses. Designed for Cloud Run.
 """
 
+import base64
 import io
 import logging
 import os
 import wave
 
 from google import genai
-from google.genai import types
 from pydub import AudioSegment
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -46,30 +46,31 @@ MODES = {
         "description": "General AI assistant",
         "system_instruction": (
             "You are a helpful, concise AI assistant on Telegram. "
-            "Keep responses short and informative. Use plain text formatting "
-            "(no markdown) since Telegram voice messages are audio-only."
+            "Keep responses short and informative. "
+            "Always respond in the same language the user writes or speaks in."
         ),
-        "audio_prompt": "Listen to this voice message and respond helpfully.",
+        "audio_prompt": "Listen to this voice message and respond helpfully in the same language.",
     },
     "transcribe": {
         "label": "🎤 Transcribe",
         "description": "Transcribe voice to text",
         "system_instruction": (
             "You are a transcription assistant. Your only job is to "
-            "accurately transcribe the audio you receive. Output only the "
-            "transcription, nothing else. Do not add commentary or formatting."
+            "accurately transcribe the audio you receive in the original language. "
+            "Output only the transcription, nothing else. "
+            "Do not add commentary or formatting."
         ),
-        "audio_prompt": "Transcribe this audio exactly as spoken.",
+        "audio_prompt": "Transcribe this audio exactly as spoken, preserving the original language.",
     },
     "translate": {
         "label": "🌐 Translate",
-        "description": "Translate voice/text to English",
+        "description": "Translate voice/text",
         "system_instruction": (
             "You are a translation assistant. Translate everything you receive "
-            "into English. If the input is already in English, output it unchanged. "
-            "Output only the translation, nothing else."
+            "into {target_language}. If the input is already in {target_language}, "
+            "output it unchanged. Output only the translation, nothing else."
         ),
-        "audio_prompt": "Translate the speech in this audio to English.",
+        "audio_prompt": "Translate the speech in this audio to {target_language}.",
     },
 }
 
@@ -93,7 +94,10 @@ gemini_client = genai.Client(api_key=GOOGLE_API_KEY)
 
 voice_prefs: dict[int, bool] = {}
 chat_modes: dict[int, str] = {}
+last_interaction_ids: dict[int, str] = {}  # chat_id → interaction ID for multi-turn
+translate_langs: dict[int, str] = {}  # chat_id → target language for translate mode
 DEFAULT_VOICE_ENABLED = os.environ.get("VOICE_ENABLED", "true").lower() == "true"
+DEFAULT_TRANSLATE_LANG = "English"
 
 
 def is_voice_enabled(chat_id: int) -> bool:
@@ -104,68 +108,96 @@ def get_mode(chat_id: int) -> str:
     return chat_modes.get(chat_id, DEFAULT_MODE)
 
 
+def get_translate_language(chat_id: int) -> str:
+    return translate_langs.get(chat_id, DEFAULT_TRANSLATE_LANG)
+
+
 # ---------------------------------------------------------------------------
 # Gemini helpers
 # ---------------------------------------------------------------------------
 
 
-async def gemini_reason(
+async def gemini_interact(
+    chat_id: int,
     text: str | None = None,
     audio_bytes: bytes | None = None,
     mode: str = DEFAULT_MODE,
 ) -> str:
-    """Send text or audio to Gemini 3.1 Flash Lite and return the text response."""
+    """Send text or audio via the Gemini Interactions API.
+
+    Uses previous_interaction_id for server-side multi-turn context.
+    """
     mode_config = MODES[mode]
-    contents: list = []
+    target_lang = get_translate_language(chat_id)
+
+    # Resolve {target_language} templates for translate mode
+    system_instruction = mode_config["system_instruction"].format(target_language=target_lang)
+    audio_prompt = mode_config["audio_prompt"].format(target_language=target_lang)
+
+    input_parts: list = []
 
     if audio_bytes is not None:
-        contents.append(
-            types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg")
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        input_parts.append(
+            {"type": "audio", "data": audio_b64, "mime_type": "audio/ogg"}
         )
-        contents.append(mode_config["audio_prompt"])
+        input_parts.append({"type": "text", "text": audio_prompt})
 
     if text is not None:
-        contents.append(text)
+        input_parts.append({"type": "text", "text": text})
 
-    response = gemini_client.models.generate_content(
-        model=REASONING_MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=mode_config["system_instruction"],
-        ),
-    )
-    return response.text or "(No response generated)"
+    # Use single text string if only one text part
+    input_value = input_parts if len(input_parts) > 1 else input_parts[0]["text"] if input_parts and input_parts[0]["type"] == "text" else input_parts
+
+    # Build kwargs
+    kwargs: dict = {
+        "model": REASONING_MODEL,
+        "input": input_value,
+        "system_instruction": system_instruction,
+    }
+
+    # Chain to previous interaction for multi-turn context
+    prev_id = last_interaction_ids.get(chat_id)
+    if prev_id:
+        kwargs["previous_interaction_id"] = prev_id
+
+    interaction = gemini_client.interactions.create(**kwargs)
+
+    # Store interaction ID for next turn
+    last_interaction_ids[chat_id] = interaction.id
+
+    return interaction.outputs[-1].text or "(No response generated)"
 
 
 async def gemini_tts(text: str) -> bytes:
-    """Convert text to OGG/Opus audio bytes via Gemini TTS."""
-    response = gemini_client.models.generate_content(
+    """Convert text to OGG/Opus audio bytes via Gemini TTS (Interactions API)."""
+    interaction = gemini_client.interactions.create(
         model=TTS_MODEL,
-        contents=text,
-        config=types.GenerateContentConfig(
-            response_modalities=["AUDIO"],
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name=TTS_VOICE,
-                    )
-                )
-            ),
-        ),
+        input=text,
+        response_modalities=["AUDIO"],
+        generation_config={
+            "speech_config": {
+                "voice": TTS_VOICE.lower(),
+            }
+        },
     )
 
-    # Extract audio data from response
-    audio_data = response.candidates[0].content.parts[0].inline_data
-    pcm_audio = audio_data.data
-    sample_rate = audio_data.mime_type.split("rate=")[-1] if "rate=" in audio_data.mime_type else "24000"
-    sample_rate = int(sample_rate)
+    # Extract PCM audio from response (base64-encoded)
+    pcm_audio = None
+    for output in interaction.outputs:
+        if output.type == "audio":
+            pcm_audio = base64.b64decode(output.data)
+            break
+
+    if pcm_audio is None:
+        raise RuntimeError("No audio output from TTS")
 
     # Convert raw PCM → WAV → OGG/Opus for Telegram
     wav_buffer = io.BytesIO()
     with wave.open(wav_buffer, "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)  # 16-bit
-        wav_file.setframerate(sample_rate)
+        wav_file.setframerate(24000)
         wav_file.writeframes(pcm_audio)
 
     wav_buffer.seek(0)
@@ -188,6 +220,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "👋 Hi! I'm your Gemini AI assistant.\n\n"
         "• Send me a **text message** or **voice note**\n"
         "• /mode — Switch between Agent, Transcribe, and Translate\n"
+        "• /language — Set translation target language\n"
         "• /voice on|off — Toggle voice responses\n\n"
         "Powered by Gemini 3.1 Flash Lite ⚡",
         parse_mode="Markdown",
@@ -250,10 +283,37 @@ async def mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     chat_modes[chat_id] = mode_key
+    last_interaction_ids.pop(chat_id, None)  # Reset conversation on mode change
     cfg = MODES[mode_key]
 
+    desc = cfg["description"]
+    if mode_key == "translate":
+        desc += f" → {get_translate_language(chat_id)}"
+
     await query.edit_message_text(
-        f"Switched to **{cfg['label']}** mode\n_{cfg['description']}_",
+        f"Switched to **{cfg['label']}** mode\n_{desc}_",
+        parse_mode="Markdown",
+    )
+
+
+async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /language <lang> command to set translation target language."""
+    chat_id = update.effective_chat.id
+    args = context.args
+
+    if not args:
+        current = get_translate_language(chat_id)
+        await update.message.reply_text(
+            f"🌐 Translation target: **{current}**\n"
+            "Use `/language Spanish` (or any language) to change.",
+            parse_mode="Markdown",
+        )
+        return
+
+    lang = " ".join(args).strip().title()
+    translate_langs[chat_id] = lang
+    await update.message.reply_text(
+        f"🌐 Translation target set to **{lang}**.",
         parse_mode="Markdown",
     )
 
@@ -270,8 +330,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # Send typing indicator
     await update.message.chat.send_action("typing")
 
-    # Get Gemini response
-    response_text = await gemini_reason(text=user_text, mode=mode)
+    # Get Gemini response via Interactions API
+    response_text = await gemini_interact(chat_id, text=user_text, mode=mode)
 
     # Send text response
     await update.message.reply_text(response_text)
@@ -303,8 +363,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     voice_file = await voice.get_file()
     audio_bytes = await voice_file.download_as_bytearray()
 
-    # Get Gemini response from audio
-    response_text = await gemini_reason(audio_bytes=bytes(audio_bytes), mode=mode)
+    # Get Gemini response from audio via Interactions API
+    response_text = await gemini_interact(chat_id, audio_bytes=bytes(audio_bytes), mode=mode)
 
     # Send text response
     await update.message.reply_text(response_text)
@@ -332,6 +392,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("voice", voice_command))
     app.add_handler(CommandHandler("mode", mode_command))
+    app.add_handler(CommandHandler("language", language_command))
     app.add_handler(CallbackQueryHandler(mode_callback, pattern=r"^mode:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
