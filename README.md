@@ -111,7 +111,8 @@ gcloud run deploy telegram-gemini-bot \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest"
+  --set-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest" \
+  --no-cpu-throttling
 ```
 
 The bot auto-detects Cloud Run via the `K_SERVICE` environment variable and starts listening on port 8080 even without a webhook URL — so the first deploy succeeds.
@@ -138,6 +139,7 @@ gcloud run services update telegram-gemini-bot \
 | `Build failed... default service account is missing required IAM permissions` | Grant `roles/cloudbuild.builds.builder` and `roles/storage.objectViewer` (Step 3) |
 | `Permission denied on secret` | Grant `roles/secretmanager.secretAccessor` (Step 3) |
 | `API not enabled` | Run `gcloud services enable <api>` or say `Y` when prompted |
+| `Voice replies are slow or delayed` | Use `--no-cpu-throttling` to keep CPU active after the initial response |
 
 ### How Webhooks Work
 

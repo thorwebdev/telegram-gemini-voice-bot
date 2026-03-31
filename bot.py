@@ -164,6 +164,7 @@ async def gemini_interact(
         "model": REASONING_MODEL,
         "input": input_value,
         "system_instruction": system_instruction,
+        "tools": [{"type": "google_search"}],
     }
 
     # Chain to previous interaction for multi-turn context
@@ -344,8 +345,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # Get Gemini response via Interactions API
     response_text = await gemini_interact(chat_id, text=user_text, mode=mode)
 
+    # Prefix with mode label
+    full_response = f"{MODES[mode]['label']}: {response_text}"
+
     # Send text response
-    await update.message.reply_text(response_text)
+    await update.message.reply_text(full_response)
 
     # Optionally send voice response
     if is_voice_enabled(chat_id):
@@ -377,8 +381,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     # Get Gemini response from audio via Interactions API
     response_text = await gemini_interact(chat_id, audio_bytes=bytes(audio_bytes), mode=mode)
 
+    # Prefix with mode label
+    full_response = f"{MODES[mode]['label']}: {response_text}"
+
     # Send text response
-    await update.message.reply_text(response_text)
+    await update.message.reply_text(full_response)
 
     # Optionally send voice response
     if is_voice_enabled(chat_id):

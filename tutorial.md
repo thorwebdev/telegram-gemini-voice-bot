@@ -419,13 +419,16 @@ gcloud projects add-iam-policy-binding $(gcloud config get-value project) \
 
 ### 4. Deploy
 
-```bash
 gcloud run deploy telegram-gemini-bot \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest"
+  --set-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest" \
+  --no-cpu-throttling
 ```
+
+**Note on `--no-cpu-throttling`**: This tells Cloud Run to keep the CPU active even after the initial response is sent. Since the bot needs to process TTS and send a voice reply *after* acknowledging the message, this prevents the CPU from being throttled, which would otherwise cause the voice reply to be delayed or stall until the next message arrives.
+    
 
 Notice there's no `WEBHOOK_URL` here — and that's fine. The bot detects Cloud Run automatically via the `K_SERVICE` environment variable (which Cloud Run always sets) and starts the HTTP server on port 8080. It just won't register a webhook with Telegram yet, so it won't receive messages until Step 5.
 
@@ -449,6 +452,8 @@ Cloud Run gives you HTTPS, auto-scaling, and scale-to-zero — you only pay when
 | `Permission denied on secret` | Service account can't access Secret Manager | Grant `roles/secretmanager.secretAccessor` (see Step 3) |
 | `API [secretmanager.googleapis.com] not enabled` | Secret Manager API hasn't been turned on | Run `gcloud services enable secretmanager.googleapis.com` |
 | `API [cloudbuild.googleapis.com] not enabled` | Cloud Build API hasn't been turned on | Say `Y` when prompted, or run `gcloud services enable cloudbuild.googleapis.com` |
+| `Voice replies are slow or delayed` | CPU is being throttled after the text response | Deploy with `--no-cpu-throttling` to keep CPU active for background tasks |
+    
 
 ## The Key Architectural Ideas
 
