@@ -63,34 +63,67 @@ python bot.py
 
 ## Deploy to Cloud Run
 
-### Step 1: Store Secrets
+### Step 1: Configure `gcloud` and Enable APIs
 
 ```bash
-# Create secrets in Google Cloud Secret Manager
-echo -n "YOUR_TELEGRAM_TOKEN" | gcloud secrets create telegram-bot-token --data-file=-
-echo -n "YOUR_GOOGLE_API_KEY" | gcloud secrets create google-api-key --data-file=-
+gcloud init --skip-diagnostics
+
+gcloud services enable secretmanager.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
 ```
 
-### Step 2: Deploy (without webhook URL)
+### Step 2: Store Secrets
 
-On the first deploy you don't know the Cloud Run URL yet, so deploy without it:
+```bash
+echo -n "$(grep TELEGRAM_BOT_TOKEN .env | cut -d '=' -f2)" | \
+  gcloud secrets create TELEGRAM_BOT_TOKEN --data-file=-
+echo -n "$(grep GOOGLE_API_KEY .env | cut -d '=' -f2)" | \
+  gcloud secrets create GOOGLE_API_KEY --data-file=-
+```
+
+### Step 3: Grant IAM Permissions
+
+Cloud Run source deploys use the default Compute Engine service account, which needs additional roles:
+
+```bash
+PROJECT_NUMBER=$(gcloud projects describe $(gcloud config get-value project) \
+  --format='value(projectNumber)')
+
+# Cloud Build + Storage (for building the container)
+gcloud projects add-iam-policy-binding $(gcloud config get-value project) \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/cloudbuild.builds.builder"
+
+gcloud projects add-iam-policy-binding $(gcloud config get-value project) \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/storage.objectViewer"
+
+# Secret Manager (for accessing secrets at runtime)
+gcloud projects add-iam-policy-binding $(gcloud config get-value project) \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+### Step 4: Deploy
 
 ```bash
 gcloud run deploy telegram-gemini-bot \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-secrets="TELEGRAM_BOT_TOKEN=telegram-bot-token:latest,GOOGLE_API_KEY=google-api-key:latest"
+  --set-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest"
 ```
+
+The bot auto-detects Cloud Run via the `K_SERVICE` environment variable and starts listening on port 8080 even without a webhook URL — so the first deploy succeeds.
 
 The deploy output will show the service URL, e.g.:
 ```
 Service URL: https://telegram-gemini-bot-abc123-uc.a.run.app
 ```
 
-### Step 3: Set the Webhook URL
+### Step 5: Set the Webhook URL
 
-Update the service with the URL from step 2:
+Update the service with the URL from step 4 so Telegram knows where to send messages:
 
 ```bash
 gcloud run services update telegram-gemini-bot \
@@ -98,7 +131,13 @@ gcloud run services update telegram-gemini-bot \
   --update-env-vars="WEBHOOK_URL=https://telegram-gemini-bot-abc123-uc.a.run.app"
 ```
 
-This triggers a new revision. On startup, the bot automatically registers the webhook with Telegram — no manual setup needed.
+### Troubleshooting
+
+| Error | Fix |
+|---|---|
+| `Build failed... default service account is missing required IAM permissions` | Grant `roles/cloudbuild.builds.builder` and `roles/storage.objectViewer` (Step 3) |
+| `Permission denied on secret` | Grant `roles/secretmanager.secretAccessor` (Step 3) |
+| `API not enabled` | Run `gcloud services enable <api>` or say `Y` when prompted |
 
 ### How Webhooks Work
 

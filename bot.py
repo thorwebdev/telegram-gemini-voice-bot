@@ -35,6 +35,16 @@ PORT = int(os.environ.get("PORT", "8080"))
 REASONING_MODEL = "gemini-3.1-flash-lite-preview"
 TTS_MODEL = "gemini-2.5-flash-preview-tts"
 TTS_VOICE = "Kore"  # Natural-sounding voice
+TTS_PROMPT = (
+    "# AUDIO PROFILE: Gemini Assistant\n"
+    "## DIRECTOR'S NOTES\n"
+    "Style: Warm, friendly, and conversational. Like a helpful mate "
+    "chatting over coffee. Natural and approachable, never robotic.\n"
+    "Accent: Friendly south London accent, as heard in Brixton or Peckham. "
+    "Not posh, not Cockney — relaxed and modern south London.\n"
+    "Pace: Natural conversational pace, not rushed.\n"
+    "## TRANSCRIPT\n"
+)
 
 # ---------------------------------------------------------------------------
 # Modes — each mode has a system instruction and an audio prompt
@@ -173,10 +183,11 @@ async def gemini_tts(text: str) -> bytes:
     """Convert text to OGG/Opus audio bytes via Gemini TTS (Interactions API)."""
     interaction = gemini_client.interactions.create(
         model=TTS_MODEL,
-        input=text,
+        input=TTS_PROMPT + text,
         response_modalities=["AUDIO"],
         generation_config={
             "speech_config": {
+                "language": "en-us",
                 "voice": TTS_VOICE.lower(),
             }
         },
@@ -406,6 +417,31 @@ def main() -> None:
             url_path="webhook",
             webhook_url=f"{WEBHOOK_URL}/webhook",
         )
+    elif os.environ.get("K_SERVICE"):
+        # Cloud Run detected but no WEBHOOK_URL yet (first deploy).
+        # Start a minimal HTTP server so the container health check passes.
+        # The bot won't receive messages until WEBHOOK_URL is set.
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+
+        service = os.environ["K_SERVICE"]
+        logger.info(
+            "Cloud Run detected (K_SERVICE=%s) but WEBHOOK_URL not set. "
+            "Starting health-check server on port %s. "
+            "Set WEBHOOK_URL to activate the bot.",
+            service,
+            PORT,
+        )
+
+        class HealthHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"OK - Set WEBHOOK_URL to activate the bot")
+
+            def log_message(self, format, *args):
+                pass
+
+        HTTPServer(("0.0.0.0", PORT), HealthHandler).serve_forever()
     else:
         # Polling mode (local development without public URL)
         logger.info("Starting polling mode (no WEBHOOK_URL set)")
