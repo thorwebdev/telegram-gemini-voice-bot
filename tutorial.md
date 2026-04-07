@@ -51,6 +51,7 @@ Create a `.env` file with your credentials:
 # .env
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 GOOGLE_API_KEY=your-google-api-key
+TELEGRAM_SECRET_TOKEN=generate-a-random-string-here
 VOICE_ENABLED=true
 ```
 
@@ -80,6 +81,7 @@ from telegram.ext import (
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 GOOGLE_API_KEY = os.environ["GOOGLE_API_KEY"]
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
+TELEGRAM_SECRET_TOKEN = os.environ.get("TELEGRAM_SECRET_TOKEN")
 PORT = int(os.environ.get("PORT", "8080"))
 
 REASONING_MODEL = "gemini-3.1-flash-lite-preview"
@@ -309,6 +311,7 @@ def main() -> None:
             port=PORT,
             url_path="webhook",
             webhook_url=f"{WEBHOOK_URL}/webhook",
+            secret_token=TELEGRAM_SECRET_TOKEN,
         )
     else:
         # Polling mode (local dev — no public URL needed)
@@ -386,6 +389,8 @@ echo -n "$(grep TELEGRAM_BOT_TOKEN .env | cut -d '=' -f2)" | \
   gcloud secrets create TELEGRAM_BOT_TOKEN --data-file=-
 echo -n "$(grep GOOGLE_API_KEY .env | cut -d '=' -f2)" | \
   gcloud secrets create GOOGLE_API_KEY --data-file=-
+echo -n "$(openssl rand -base64 32)" | \
+  gcloud secrets create TELEGRAM_SECRET_TOKEN --data-file=-
 ```
 
 > **Note:** The `echo -n` flag strips the trailing newline so it's not included in the stored secret. If you see a `%` at the end of the output when echoing — that's just zsh indicating no trailing newline, not part of your secret.
@@ -423,7 +428,7 @@ gcloud run deploy telegram-gemini-bot \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest" \
+  --set-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,TELEGRAM_SECRET_TOKEN=TELEGRAM_SECRET_TOKEN:latest" \
   --no-cpu-throttling
 ```
 
