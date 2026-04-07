@@ -30,6 +30,7 @@ from telegram.ext import (
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 GOOGLE_API_KEY = os.environ["GOOGLE_API_KEY"]
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
+TELEGRAM_SECRET_TOKEN = os.environ.get("TELEGRAM_SECRET_TOKEN")
 PORT = int(os.environ.get("PORT", "8080"))
 
 REASONING_MODEL = "gemini-3.1-flash-lite-preview"
@@ -423,6 +424,7 @@ def main() -> None:
             port=PORT,
             url_path="webhook",
             webhook_url=f"{WEBHOOK_URL}/webhook",
+            secret_token=TELEGRAM_SECRET_TOKEN,
         )
     elif os.environ.get("K_SERVICE"):
         # Cloud Run detected but no WEBHOOK_URL yet (first deploy).

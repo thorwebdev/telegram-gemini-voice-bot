@@ -79,6 +79,8 @@ echo -n "$(grep TELEGRAM_BOT_TOKEN .env | cut -d '=' -f2)" | \
   gcloud secrets create TELEGRAM_BOT_TOKEN --data-file=-
 echo -n "$(grep GOOGLE_API_KEY .env | cut -d '=' -f2)" | \
   gcloud secrets create GOOGLE_API_KEY --data-file=-
+echo -n "$(openssl rand -base64 32)" | \
+  gcloud secrets create TELEGRAM_SECRET_TOKEN --data-file=-
 ```
 
 ### Step 3: Grant IAM Permissions
@@ -111,7 +113,7 @@ gcloud run deploy telegram-gemini-bot \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest" \
+  --set-secrets="TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,TELEGRAM_SECRET_TOKEN=TELEGRAM_SECRET_TOKEN:latest" \
   --no-cpu-throttling
 ```
 
@@ -165,6 +167,7 @@ curl "https://api.telegram.org/bot<TOKEN>/deleteWebhook"
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | ✅ | Bot token from @BotFather |
 | `GOOGLE_API_KEY` | ✅ | Google AI API key |
+| `TELEGRAM_SECRET_TOKEN` | ❌ | Secret for secure webhooks (recommended) |
 | `WEBHOOK_URL` | ❌ | Public URL for webhooks (omit for polling mode) |
 | `PORT` | ❌ | HTTP port (default: 8080) |
 | `VOICE_ENABLED` | ❌ | Default voice response state (default: true) |
