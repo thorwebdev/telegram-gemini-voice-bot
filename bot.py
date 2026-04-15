@@ -34,7 +34,7 @@ TELEGRAM_SECRET_TOKEN = os.environ.get("TELEGRAM_SECRET_TOKEN")
 PORT = int(os.environ.get("PORT", "8080"))
 
 REASONING_MODEL = "gemini-3.1-flash-lite-preview"
-TTS_MODEL = "gemini-2.5-flash-preview-tts"
+TTS_MODEL = "gemini-3.1-flash-tts-preview"
 TTS_VOICE = "Kore"  # Natural-sounding voice
 TTS_PROMPT = (
     "# AUDIO PROFILE: Gemini Assistant\n"

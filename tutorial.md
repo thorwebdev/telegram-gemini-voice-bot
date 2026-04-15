@@ -21,7 +21,7 @@ All in about 400 lines of Python. Let's build it.
 - **[python-telegram-bot](https://python-telegram-bot.org/)** — async Telegram Bot API wrapper
 - **[Gemini Interactions API](https://ai.google.dev/gemini-api/docs/interactions)** — Google's unified API for text, audio, and multi-turn conversations
 - **Gemini 3.1 Flash Lite** — fast, cost-efficient model for reasoning
-- **Gemini 2.5 Flash TTS** — text-to-speech model with natural-sounding voices
+- **Gemini 3.1 Flash TTS** — text-to-speech model with natural-sounding voices
 - **pydub + ffmpeg** — audio format conversion (PCM → OGG/Opus for Telegram)
 
 ## Prerequisites
@@ -85,7 +85,7 @@ TELEGRAM_SECRET_TOKEN = os.environ.get("TELEGRAM_SECRET_TOKEN")
 PORT = int(os.environ.get("PORT", "8080"))
 
 REASONING_MODEL = "gemini-3.1-flash-lite-preview"
-TTS_MODEL = "gemini-2.5-flash-preview-tts"
+TTS_MODEL = "gemini-3.1-flash-tts-preview"
 TTS_VOICE = "Kore"
 
 logging.basicConfig(
@@ -223,6 +223,16 @@ async def gemini_tts(text: str) -> bytes:
 ```
 
 The key detail: Gemini TTS returns **raw PCM** samples at 24kHz, 16-bit, mono. We wrap it in a WAV header using Python's `wave` module, then use `pydub` (which calls `ffmpeg` under the hood) to re-encode as OGG/Opus — the format Telegram expects for `reply_voice()`.
+
+> **💡 Inline audio tags:** Gemini TTS supports [inline audio tags](https://ai.google.dev/gemini-api/docs/speech-generation#transcript-tags) — square-bracket modifiers you can embed directly in your transcript to control delivery. For example, `[whispers]`, `[laughs]`, `[excited]`, `[sighs]`, or `[shouting]`. You can use these in the text you pass to TTS to make responses more expressive:
+>
+> ```
+> "[laughs] Oh that's a great question! [whispers] Let me tell you a secret..."
+> ```
+>
+> There's no fixed list — the model understands a wide range of emotions and expressions like `[sarcastic]`, `[panicked]`, `[curious]`, and more. 
+
+Find a Gemini TTS prompting guide here: https://dev.to/googleai/how-to-prompt-gemini-31s-new-text-to-speech-model-24bb
 
 ## Step 4: Telegram Handlers
 
@@ -502,7 +512,7 @@ We use two different models for two different jobs:
 | Job | Model | Why |
 |---|---|---|
 | Understanding + reasoning | `gemini-3.1-flash-lite-preview` | Cheapest, fastest — ideal for a chatbot |
-| Text-to-speech | `gemini-2.5-flash-preview-tts` | Purpose-built for natural speech synthesis |
+| Text-to-speech | `gemini-3.1-flash-tts-preview` | Purpose-built for natural speech synthesis |
 
 This is cheaper and better than using a single model for both. Flash Lite handles the thinking, TTS handles the speaking.
 

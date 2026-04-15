@@ -30,7 +30,7 @@ The goal of this project is to build a high-performance, cost-efficient Telegram
 - **System Instructions**: Define the bot's persona (helpful, concise).
 
 ### 4.3 Voice Synthesis (Gemini TTS)
-- **Model**: `gemini-2.5-flash-tts` or `gemini-2.5-flash-lite-preview-tts`.
+- **Model**: `gemini-3.1-flash-tts-preview`.
 - **Capability**: Convert the text response from Gemini 3.1 into a `.wav` or `.mp3` file.
 - **Tone/Style**: Use natural-sounding voices (e.g., "Kore" or "Aoede").
 
