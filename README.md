@@ -186,5 +186,5 @@ curl "https://api.telegram.org/bot<TOKEN>/deleteWebhook"
 ```
 User ↔ Telegram API ↔ Cloud Run (bot.py)
                            ├─→ Gemini 3.1 Flash Lite (reasoning)
-                           └─→ Gemini 2.5 Flash TTS (voice synthesis)
+                           └─→ Gemini 3.1 Flash TTS (voice synthesis)
 ```
