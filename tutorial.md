@@ -434,6 +434,7 @@ gcloud projects add-iam-policy-binding $(gcloud config get-value project) \
 
 ### 4. Deploy
 
+```bash
 gcloud run deploy telegram-gemini-bot \
   --source . \
   --region us-central1 \
